@@ -1,0 +1,105 @@
+services:
+  postgresql:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Temporal server. Requires a persistence backend (Postgres here) —
+  # this is the "required Temporal dependency" the assessment calls out.
+  # auto-setup creates the temporal/temporal_visibility schemas on first boot.
+  temporal:
+    image: temporalio/auto-setup:1.24.2.0
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgresql
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      # Service name, not localhost — Temporal reaches Postgres over the
+      # Compose network by its service name.
+      POSTGRES_SEEDS: postgresql
+    ports:
+      - "7233:7233"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Express API: serves /health, the mock supplier endpoints, and /api/hotels.
+  api:
+    build: .
+    command: ["node", "dist/server.js"]
+    environment:
+      PORT: "3000"
+      NODE_ENV: production
+      LOG_LEVEL: info
+      # All three point at Compose service names, never localhost — the
+      # worker (a separate container) needs APP_BASE_URL to reach this
+      # container's mock supplier endpoints over the Compose network.
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: http://api:3000
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+    ports:
+      - "3000:3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    healthcheck:
+      # No curl/wget in the slim image — Node itself makes the request.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  # Temporal worker: executes getHotelOffersWorkflow and its activities.
+  # Same image as api, different command. Depends on api being healthy
+  # because its activities call APP_BASE_URL (the api container) over HTTP.
+  worker:
+    build: .
+    command: ["node", "dist/temporal/worker.js"]
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      REDIS_URL: redis://redis:6379
+      APP_BASE_URL: http://api:3000
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+    depends_on:
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
