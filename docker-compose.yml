@@ -13,9 +13,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # Temporal server. Requires a persistence backend (Postgres here) —
-  # this is the "required Temporal dependency" the assessment calls out.
-  # auto-setup creates the temporal/temporal_visibility schemas on first boot.
+  # Temporal server. Requires a persistence backend (Postgres here).
   temporal:
     image: temporalio/auto-setup:1.24.2.0
     depends_on:
@@ -26,8 +24,6 @@ services:
       DB_PORT: 5432
       POSTGRES_USER: temporal
       POSTGRES_PWD: temporal
-      # Service name, not localhost — Temporal reaches Postgres over the
-      # Compose network by its service name.
       POSTGRES_SEEDS: postgresql
     ports:
       - "7233:7233"
@@ -42,7 +38,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # Express API: serves /health, the mock supplier endpoints, and /api/hotels.
+  # Express API: serves /health, /health/live, mock supplier endpoints, and /api/hotels.
   api:
     build: .
     command: ["node", "dist/server.js"]
@@ -50,9 +46,8 @@ services:
       PORT: "3000"
       NODE_ENV: production
       LOG_LEVEL: info
-      # All three point at Compose service names, never localhost — the
-      # worker (a separate container) needs APP_BASE_URL to reach this
-      # container's mock supplier endpoints over the Compose network.
+      LOG_FORMAT: json
+      CORS_ORIGIN: "*"
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: http://api:3000
       TEMPORAL_ADDRESS: temporal:7233
@@ -65,7 +60,6 @@ services:
       temporal:
         condition: service_started
     healthcheck:
-      # No curl/wget in the slim image — Node itself makes the request.
       test:
         [
           "CMD",
@@ -80,14 +74,13 @@ services:
     restart: unless-stopped
 
   # Temporal worker: executes getHotelOffersWorkflow and its activities.
-  # Same image as api, different command. Depends on api being healthy
-  # because its activities call APP_BASE_URL (the api container) over HTTP.
   worker:
     build: .
     command: ["node", "dist/temporal/worker.js"]
     environment:
       NODE_ENV: production
       LOG_LEVEL: info
+      LOG_FORMAT: json
       REDIS_URL: redis://redis:6379
       APP_BASE_URL: http://api:3000
       TEMPORAL_ADDRESS: temporal:7233

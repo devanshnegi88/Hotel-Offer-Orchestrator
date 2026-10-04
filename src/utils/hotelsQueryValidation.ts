@@ -6,11 +6,17 @@ export interface HotelsQueryParams {
   maxPrice?: number;
 }
 
+const MAX_CITY_LENGTH = 100;
+
 function parseCity(raw: unknown): string {
   if (typeof raw !== "string" || raw.trim().length === 0) {
     throw new AppError("Query parameter 'city' is required", 400);
   }
-  return raw.trim();
+  const trimmed = raw.trim();
+  if (trimmed.length > MAX_CITY_LENGTH) {
+    throw new AppError(`Query parameter 'city' must not exceed ${MAX_CITY_LENGTH} characters`, 400);
+  }
+  return trimmed;
 }
 
 function parsePriceParam(raw: unknown, paramName: "minPrice" | "maxPrice"): number | undefined {

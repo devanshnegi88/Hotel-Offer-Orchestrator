@@ -27,7 +27,19 @@ async function checkSupplier(label: string, url: string): Promise<DependencyStat
 }
 
 /**
- * Reports overall service health plus the reachability of each dependency
+ * Fast liveness probe for orchestrators (Kubernetes/ECS/Docker)
+ * to verify the process is alive and accepting traffic.
+ */
+export function getLiveness(_req: Request, res: Response): void {
+  res.status(200).json({
+    status: "live",
+    uptimeSeconds: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+}
+
+/**
+ * Reports overall service readiness health plus the reachability of each dependency
  * (Redis, Supplier A, Supplier B), checked in parallel. Always responds
  * 200 — the body's `status` field distinguishes "ok" from "degraded" so
  * callers/monitors can inspect which dependency is failing without the

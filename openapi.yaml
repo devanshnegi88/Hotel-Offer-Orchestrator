@@ -1,0 +1,129 @@
+openapi: 3.0.3
+info:
+  title: Hotel Offer Orchestrator API
+  description: High-performance backend service that aggregates hotel offers from multiple suppliers with Temporal orchestration and Redis-native price filtering.
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+    description: Local development / Docker environment
+paths:
+  /health:
+    get:
+      summary: Health & Readiness check
+      description: Returns service status and dependency reachability (Redis, Supplier A, Supplier B).
+      responses:
+        '200':
+          description: Health check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptimeSeconds:
+                    type: integer
+                    example: 120
+                  timestamp:
+                    type: string
+                    example: '2026-10-04T12:00:00.000Z'
+                  dependencies:
+                    type: object
+                    properties:
+                      redis:
+                        type: string
+                        example: up
+                      supplierA:
+                        type: string
+                        example: up
+                      supplierB:
+                        type: string
+                        example: up
+
+  /health/live:
+    get:
+      summary: Liveness probe
+      description: Lightweight probe for Kubernetes / ECS liveness checks.
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: live
+                  uptimeSeconds:
+                    type: integer
+                    example: 120
+                  timestamp:
+                    type: string
+                    example: '2026-10-04T12:00:00.000Z'
+
+  /api/hotels:
+    get:
+      summary: Get aggregated hotel offers for a city
+      description: Triggers Temporal workflow to fetch and deduplicate offers, then retrieves price-filtered results from Redis.
+      parameters:
+        - name: city
+          in: query
+          required: true
+          description: City name to search for hotel offers
+          schema:
+            type: string
+            example: delhi
+        - name: minPrice
+          in: query
+          required: false
+          description: Minimum price filter
+          schema:
+            type: number
+            example: 3000
+        - name: maxPrice
+          in: query
+          required: false
+          description: Maximum price filter
+          schema:
+            type: number
+            example: 6000
+      responses:
+        '200':
+          description: Array of deduplicated hotel offers sorted by price
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Unique tracing identifier for the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MergedHotelOffer'
+        '400':
+          description: Invalid query parameters
+        '502':
+          description: Workflow or offer aggregation failure
+        '503':
+          description: Data store (Redis) read failure
+
+components:
+  schemas:
+    MergedHotelOffer:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Lemon Tree
+        price:
+          type: number
+          example: 3400
+        supplier:
+          type: string
+          example: Supplier A
+        commissionPct:
+          type: number
+          example: 8

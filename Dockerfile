@@ -1,6 +1,4 @@
 # --- Builder stage: compile TypeScript ---
-# Using a Debian-based (glibc) image, not Alpine, because @temporalio/worker's
-# native core-bridge addon needs glibc; musl (Alpine) support is unreliable.
 FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
@@ -22,11 +20,14 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY --from=builder /app/dist ./dist
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --chown=node:node package.json ./
+
+USER node
 
 EXPOSE 3000
 
-# Default command runs the API. docker-compose overrides this for the
-# worker service (node dist/temporal/worker.js) so both services share
-# this one image instead of maintaining two Dockerfiles.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health/live', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+
 CMD ["node", "dist/server.js"]

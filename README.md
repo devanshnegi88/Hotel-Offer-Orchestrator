@@ -1,13 +1,14 @@
 # 🏨 Hotel Offer Orchestrator
 
 <img width="2048" height="768" alt="Image" src="https://github.com/user-attachments/assets/b6be3821-6c52-465e-ac68-9925aa47b2fb" />
-  <strong>A resilient, Temporal-orchestrated hotel offer aggregation service with Redis-native price filtering</strong>
+  <strong>A resilient, production-ready, Temporal-orchestrated hotel offer aggregation service with Redis-native price filtering</strong>
 </p><p align="center">
     <img src="https://img.shields.io/badge/Node.js-20+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
   <img src="https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Temporal-Workflow-000000?style=for-the-badge" alt="Temporal">
   <img src="https://img.shields.io/badge/Redis-Sorted%20Sets-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis">
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+  <img src="https://img.shields.io/badge/Security-Helmet%20%2B%20Rate%20Limit-green?style=for-the-badge" alt="Security">
 </p><p align="center">
   <img src="https://img.shields.io/badge/Tests-61%20passing-2EA44F?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/Suppliers-2-6F42C1?style=flat-square" alt="Suppliers">
@@ -26,30 +27,21 @@ The system uses Temporal for workflow orchestration, retries, parallel supplier 
 Given a city, the service:
 
 1. ⚡ Fetches Supplier A and Supplier B in parallel.
-
-3. 📦 Processes both responses as an aggregation batch.
-   
-5. 🧹 Deduplicates hotels using normalized names.
-  
-7. 💰 Keeps the cheapest offer for duplicate hotels.
-   
-9. 🔴 Persists results using Redis Sorted Sets + Hashes.
-    
-11. 🔎 Performs price filtering directly inside Redis using "ZRANGEBYSCORE".
-    
-13. 🛡️ Handles individual supplier failures gracefully.
-    
-15. 📤 Returns the final offers through a REST API.
-
-### Core principle: 
-Temporal handles orchestration and reliability, Redis handles indexed price filtering, and business logic remains isolated from infrastructure.»
+2. 📦 Processes both responses as an aggregation batch.
+3. 🧹 Deduplicates hotels using normalized names.
+4. 💰 Keeps the cheapest offer for duplicate hotels.
+5. 🔴 Persists results using Redis Sorted Sets + Hashes.
+6. 🔎 Performs price filtering directly inside Redis using `ZRANGEBYSCORE`.
+7. 🛡️ Handles individual supplier failures gracefully.
+8. 🔐 Enforces enterprise production standards (Helmet security headers, CORS, rate limiting, liveness/readiness probes, structured JSON logging, non-root Docker security).
+9. 📤 Returns the final offers through a REST API.
 
 ---
 
 ## 🏗️ Architecture
 
 <img width="1536" height="1024" alt="Image" src="https://github.com/user-attachments/assets/66a96522-ee82-4212-b013-e822362de1ab" />
->
+
 ---
 
 ## 🔄 Processing Pipeline
@@ -58,7 +50,7 @@ Temporal handles orchestration and reliability, Redis handles indexed price filt
 
 ---
 
-## ✨ Key Features
+## ✨ Key Features & Production Readiness
 
 | Feature | Implementation |
 |---|---|
@@ -71,35 +63,41 @@ Temporal handles orchestration and reliability, Redis handles indexed price filt
 | 🔁 Retries | Temporal exponential backoff |
 | 🛡️ Fault tolerance | Supplier-level degradation |
 | 🆔 Request tracing | `X-Request-Id` |
-| 🐳 Deployment | Docker Compose |
+| 🔒 Security Hardening | Helmet (HSTS, CSP, No-Sniff), CORS, `x-powered-by` disabled |
+| 🚦 Rate Limiting | Configurable IP rate limiting (`express-rate-limit`) |
+| 📊 Observability | Structured JSON logging (`LOG_FORMAT=json`), Liveness & Readiness health probes |
+| 💀 Process Safety | Uncaught exception & unhandled rejection handlers with graceful shutdown timeouts |
+| 🐳 Secure Docker | Non-root `node` container user & healthcheck probes |
+| 📜 OpenAPI 3.0 | Complete API specification in `openapi.yaml` |
+| ⚙️ CI/CD | GitHub Actions workflow (`.github/workflows/ci.yml`) |
 | 🧪 Testing | Jest + Postman/Newman |
 
 ---
 
-## 🧹 Deduplication
+## 🔒 Production Security & Hardening
+
+1. **Security Headers (Helmet)**: Enforces HTTP security headers including Content-Security-Policy, HTTP Strict Transport Security (HSTS), X-Frame-Options, and X-Content-Type-Options.
+2. **CORS Control**: Configurable cross-origin resource sharing via `CORS_ORIGIN`.
+3. **Rate Limiting**: Protects endpoints against DDoS attacks and brute-force queries (configurable via `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX`).
+4. **Input Sanitization**: Rejects excessively long query inputs (e.g. `city` max 100 chars) and validates all numeric bounds.
+5. **Non-Root Docker Execution**: Dockerfile switches to unprivileged `USER node` for security compliance.
+
+---
+
+## 📊 Observability & Health Probes
+
+### Log Formatting
+Supports both structured JSON logging (`LOG_FORMAT=json`) for production cloud aggregators (Datadog, AWS CloudWatch, GCP Logging) and human-readable text logs (`LOG_FORMAT=text`) for local development.
+
+### Kubernetes / Container Health Probes
+- **Readiness Probe (`GET /health` or `GET /health/ready`)**: Deep health check verifying connectivity to Redis, Supplier A, Supplier B, and Temporal.
+- **Liveness Probe (`GET /health/live`)**: Fast probe returning HTTP 200 to verify the process is alive.
+
+---
+
+## 🧹 Deduplication Rules
 
 Hotels are matched using a case-insensitive, trimmed name.
-
-```
-Supplier A
-───────────
-Holtin      ₹6000
-Radison     ₹5900
-
-Supplier B
-───────────
-Holtin      ₹5340
-Radison     ₹6150
-
-              ↓
-
-Final Batch
-───────────
-Holtin      ₹5340  → Supplier B
-Radison     ₹5900  → Supplier A
-```
-
-### Rules
 
 - Same hotel → cheapest price wins.
 - Hotel in one supplier → retained.
@@ -122,355 +120,58 @@ Radison     ₹5900  → Supplier A
 6. 📤 Return final offers
 ```
 
-## 🔁 Retry Policy
-```
-Timeout:          10s
-Initial delay:     1s
-Backoff factor:    2x
-Maximum delay:    10s
-Maximum attempts:  3
-```
-If one supplier fails after all retries, the workflow continues using the available supplier's offers.
-
 ---
 
-## 🔴 Redis Data Model
+## 🔴 Redis Data Model & Filtering
 
-Sorted Set
-```
-hotels:{city}:index
-```
-Score  → Price
-Member → Hotel name
+### Sorted Set (`hotels:{city}:index`)
+- **Score**: Price
+- **Member**: Hotel name
 
-Example:
+### Hash (`hotel:{city}:{slug(name)}`)
+Stores complete hotel JSON object fields (`name`, `price`, `supplier`, `commissionPct`).
 
-2950 → Clarks Inn
-3400 → Lemon Tree
-5340 → Holtin
-5900 → Radison
-8200 → Taj Continental
-9400 → Hyatt Place
-
-Hash
-```
-hotel:{city}:{slug(name)}
-```
-Stores the complete hotel record:
-```
-{
-  "name": "Holtin",
-  "price": 5340,
-  "supplier": "Supplier B",
-  "commissionPct": 20
-}
-```
-The city dataset is fully replaced on every successful aggregation, preventing stale offers from remaining in Redis.
-
----
-
-## 🔎 Redis-Native Filtering
-
-Price filtering is performed directly by Redis:
-
+Price range query executed natively in Redis:
+```bash
 ZRANGEBYSCORE hotels:delhi:index 3000 6000
 ```
-GET /api/hotels
-       │
-       ▼
-Redis ZRANGEBYSCORE
-       │
-       ▼
-Matching hotel names
-       │
-       ▼
-Pipeline HGETALL
-       │
-       ▼
-Complete hotel objects
-```
-The application does not load the complete hotel dataset and filter it using JavaScript.
 
 ---
 
-### 🌐 API
+## 🌐 API Specification
 
-### ❤️ Health
-
-```GET /health```
-
-## 🏨 Mock Suppliers
-```
-GET /supplierA/hotels?city=delhi
-GET /supplierB/hotels?city=delhi
-```
-
-## 🔎 Hotel Offers
-
-```GET /api/hotels?city=delhi```
-
-Price filtering:
-````
-GET /api/hotels?city=delhi&minPrice=3000&maxPrice=6000
-````
-Response Codes
-
-| Status | Scenario |
-|---|---|
-| `200` | Successful request |
-| `400` | Invalid query parameters |
-| `502` | Workflow/aggregation failure |
-| `503` | Redis read failure |
-| `404` | Unknown route |
-
-Every response includes an "X-Request-Id" for request tracing.
+- `GET /health` — Service readiness check & dependency status
+- `GET /health/live` — Fast process liveness check
+- `GET /supplierA/hotels?city=delhi` — Mock Supplier A
+- `GET /supplierB/hotels?city=delhi` — Mock Supplier B
+- `GET /api/hotels?city=delhi&minPrice=3000&maxPrice=6000` — Aggregated & filtered hotel offers
 
 ---
 
-🛠️ Tech Stack
+## 🚀 Local Setup & Docker Deployment
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js 20+ |
-| Language | TypeScript |
-| API | Express |
-| Workflow | Temporal |
-| Database | Redis |
-| Temporal Persistence | PostgreSQL |
-| Testing | Jest |
-| API Testing | Postman + Newman |
-| Deployment | Docker + Docker Compose |
-
----
-
-## 🚀 Local Setup
-
-### Requirements
-
-- Node.js 20+
-- Redis
-- Temporal CLI
-- npm
-
-### Install
-```
+### Local Development
+```bash
 npm install
 cp .env.example .env
+npm run dev
+npm run worker
 ```
-Start Services
 
-#### Terminal 1
-```redis-server```
-
-#### Terminal 2
-```temporal server start-dev```
-
-#### Terminal 3
-```npm run dev```
-
-#### Terminal 4
-```npm run worker```
-
-### Test:
-
-```curl "http://localhost:3000/api/hotels?city=delhi"```
-
----
-
-## 🐳 Docker Setup
-
-Build and start the complete stack:
-
-```
+### Docker Compose
+```bash
 docker compose build
 docker compose up
-```
-
-#### Services:
-```
-PostgreSQL
-     ↓
-Temporal
-     ↓
-Redis
-     ↓
-API + Worker
-```
-#### Docker service communication:
-```
-API       → api:3000
-Redis     → redis:6379
-Temporal  → temporal:7233
 ```
 
 ---
 
 ## 🧪 Testing
-
-##### Run:
-
-```npm test```
-
-#### Coverage
-
-🧹 Aggregation & deduplication
-🔎 Query validation
-🔁 Retry/backoff
-🛡️ Error handling
-🔴 Redis persistence
-🏨 Supplier endpoints
-❤️ Health endpoint
-🌐 Hotels API
-
-#### Results
-
-8 suites
-61 tests
-0 failures
-
----
-
-## 📮 Postman
-
-Import:
-
+```bash
+npm test
+npm run typecheck
 ```
-postman/
-└── Hotel-Offer-Orchestrator.postman_collection.json
 
-Or run with Newman:
-
-npm install -g newman
-
-newman run \
-  postman/Hotel-Offer-Orchestrator.postman_collection.json
-```
-Collection
-
-- ❤️ Health
-- 🏨 Supplier A
-- 🏨 Supplier B
-- 🔎 Hotels API
-- 💰 Price filtering
-- ❌ Validation errors
-- 🛡️ Resilience scenario
-
-Latest Run
-
-13 requests
-13 test scripts
-24 assertions
-0 failures
-
----
-
-#### 📊 Example
-
-Request
-```
-GET /api/hotels?city=delhi&minPrice=3000&maxPrice=6000
-```
-Response
-```
-[
-  {
-    "name": "Lemon Tree",
-    "price": 3400,
-    "supplier": "Supplier A",
-    "commissionPct": 8
-  },
-  {
-    "name": "Holtin",
-    "price": 5340,
-    "supplier": "Supplier B",
-    "commissionPct": 20
-  },
-  {
-    "name": "Radison",
-    "price": 5900,
-    "supplier": "Supplier A",
-    "commissionPct": 13
-  }
-]
-```
----
-
-## 📁 Project Structure
-```
-hotel-offer-orchestrator/
-│
-├── 🐳 Dockerfile
-├── 🐳 docker-compose.yml
-├── 🧪 jest.config.js
-├── 🧪 jest.setup.js
-│
-├── 📮 postman/
-│   └── Hotel-Offer-Orchestrator.postman_collection.json
-│
-└── src/
-    ├── server.ts
-    ├── app.ts
-    │
-    ├── config/
-    │   └── env.ts
-    │
-    ├── models/
-    │   └── hotel.ts
-    │
-    ├── data/
-    │
-    ├── controllers/
-    ├── routes/
-    ├── middleware/
-    ├── utils/
-    │
-    ├── services/
-    │   ├── redisClient.ts
-    │   └── hotelAggregationService.ts
-    │
-    ├── repositories/
-    │   ├── redisKeys.ts
-    │   └── hotelOfferRepository.ts
-    │
-    ├── temporal/
-    │   ├── client.ts
-    │   ├── worker.ts
-    │   ├── taskQueue.ts
-    │   ├── activities/
-    │   └── workflows/
-    │
-    └── **/__tests__/
-```
----
-
-## 📋 Compliance
-
-| Requirement | Status |
-|---|---|
-| Parallel supplier calls | ✅ |
-| Batched aggregation | ✅ |
-| Cheapest duplicate selection | ✅ |
-| Redis persistence | ✅ |
-| Redis-side filtering | ✅ |
-| Temporal orchestration | ✅ |
-| Activity retries | ✅ |
-| Partial supplier failure | ✅ |
-| Request tracing | ✅ |
-| Automated tests | ✅ |
-| Postman collection | ✅ |
-| Docker Compose | ✅ |
-
----
-
-## 🎯 Engineering Highlights
-
-⚡ Parallel supplier orchestration
-📦 Batched offer aggregation
-🧹 Deterministic deduplication
-🔁 Resilient Temporal workflows
-🔴 Redis-native range queries
-🛡️ Graceful partial failure handling
-🐳 Reproducible Docker deployment
-🧪 Automated unit & API testing
-
-###### A focused backend system demonstrating workflow orchestration, batch processing, distributed-service resilience, Redis indexing, and clean separation of concerns.
+- **Unit & Integration Tests**: 61 passed
+- **OpenAPI 3.0 Specification**: `openapi.yaml`
+- **Postman Collection**: `postman/Hotel-Offer-Orchestrator.postman_collection.json`

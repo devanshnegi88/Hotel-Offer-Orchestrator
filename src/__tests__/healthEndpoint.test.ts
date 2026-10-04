@@ -69,4 +69,12 @@ describe("GET /health", () => {
     expect(res.body.status).toBe("degraded");
     expect(res.body.dependencies).toEqual({ redis: "down", supplierA: "down", supplierB: "down" });
   });
+
+  it("responds 200 on /health/live for liveness probes", async () => {
+    const res = await request(app).get("/health/live");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("live");
+    expect(typeof res.body.uptimeSeconds).toBe("number");
+  });
 });

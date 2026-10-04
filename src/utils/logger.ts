@@ -13,6 +13,16 @@ function shouldLog(level: LogLevel): boolean {
 
 function format(level: LogLevel, message: string, meta?: Record<string, unknown>): string {
   const timestamp = new Date().toISOString();
+
+  if (env.logFormat === "json") {
+    return JSON.stringify({
+      timestamp,
+      level,
+      message,
+      ...meta,
+    });
+  }
+
   const metaStr = meta ? ` ${JSON.stringify(meta)}` : "";
   return `[${timestamp}] [${level.toUpperCase()}] ${message}${metaStr}`;
 }
